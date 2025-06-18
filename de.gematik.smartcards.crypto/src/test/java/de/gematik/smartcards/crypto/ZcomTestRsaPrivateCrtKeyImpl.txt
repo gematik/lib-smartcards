@@ -1,0 +1,186 @@
+  /** Method for investigating special RSA-keys. */
+  @org.junit.jupiter.api.Disabled
+  @Test
+  void test_zzz_special() {
+    final var keyMaterial =
+        """
+            30 82013a
+               02 01 00
+               02 41 0083ec700662db194b101ec24edac93273a61eaa72536c20c65e13b28a59beacad
+                       4b9382911ac0ad833babaf62d94415153e0cba37e48c6ae5f0ee51a5fa671ea9
+               02 03 010001
+               02 40 3da0fed47cea0deedb21037503106ad94c099766c1420a2da155625aef81fbf8
+                     6d59a86a5ec944ceacc8fa6ba82c47ab20e495d89630173f52062c0b6f842e61
+               02 21 00b8554b2f7bcd5cd83ccc68f06a5b8b33e41286ce821bc2cdac8b97263a04188b
+               02 21 00b736cf542e9b40f2d353e0656f2d2c19df18d9324c39d3612b85bad1eef2981b
+               02 20 1b59ac7a3328596a4c3b1826f3e0f95a8db0a207ea0e2c6d4ff8b64899bb19d9
+               02 20 3883f7c087ffec30fb6f4c30fdf2794021c990762b7d4aef1675d203202a4531
+               02 21 00876335aee7ccd76b241048b4ea56989cfb5fd195fa2b783eec87da37fdd9c464
+            """;
+    final var dut =
+        new RsaPrivateCrtKeyImpl(
+            (DerSequence) BerTlv.getInstance(keyMaterial), EafiRsaPrkFormat.PKCS1);
+
+    final var check = dut.check();
+    LOGGER.atInfo().log("check = \"{}\"", check);
+
+    final var p = dut.getPrimeP();
+    final var q = dut.getPrimeQ();
+    final var p1 = p.subtract(ONE);
+    final var q1 = q.subtract(ONE);
+    final var pq1 = p1.multiply(q1);
+    final var gcd = p1.gcd(q1);
+    final var red = pq1.divide(gcd);
+    final var dn = dut.getPublicExponent().modInverse(pq1);
+    final var ds = dut.getPublicExponent().modInverse(red);
+    final var d = dut.getPrivateExponent();
+
+    LOGGER.atInfo().log("GCD: {}", gcd);
+    LOGGER.atInfo().log("pq1 = {}", AfiBigInteger.toHex(pq1, 40));
+    LOGGER.atInfo().log("red = {}", AfiBigInteger.toHex(red, 40));
+    LOGGER.atInfo().log("dn  = {}", AfiBigInteger.toHex(dn, 40));
+    LOGGER.atInfo().log("ds  = {}", AfiBigInteger.toHex(ds, 40));
+    LOGGER.atInfo().log("d   = {}", AfiBigInteger.toHex(d, 40));
+    LOGGER.atInfo().log("com1= {}", d.compareTo(ds));
+    LOGGER.atInfo().log("com2= {}", (d.compareTo(ds) != 0));
+  } // end method */
+
+  /** Check RSA keys from files with the suffix "prv". */
+  @org.junit.jupiter.api.Disabled
+  @Test
+  void test_zzz_checkRsaKeys_2() {
+    // Assertions:
+    // - none -
+
+    // Test strategy:
+    // --- define path and desired suffix
+    final var home = System.getProperty("user.home");
+
+    /*
+    final var root = Paths.get(home, "tmp/eHCA_test_certs");
+    final var suffix = "2048-valid.prv";
+    // */
+
+    // *
+    final var root = Paths.get(home, "tmp/Anne.Kruse");
+    final var suffix = ".prv";
+    // */
+    assertTrue(Files.isDirectory(root));
+
+    // --- search for regular files in path with desired suffix
+    final var cumulatedCheckResult = new TreeSet<String>();
+    try (Stream<Path> walker = Files.walk(root)) {
+      final var list =
+          walker.filter(Files::isRegularFile).filter(p -> p.toString().endsWith(suffix)).toList();
+      for (final var i : list) {
+        LOGGER.atInfo().log("path: {}", i);
+        final var fileName = String.format("%s", i.getFileName());
+        final var body = Files.readAllBytes(i);
+        final var seq = (DerSequence) BerTlv.getInstance(body);
+        // LOGGER.atInfo().log("tlv:{}", seq.toStringTree());
+        final var prk = new RsaPrivateCrtKeyImpl(seq, EafiRsaPrkFormat.PKCS8); // NOPMD new in loop
+        final var cr = prk.check();
+        LOGGER.atInfo().log("{}: \"{}\"", fileName, cr);
+
+        if (cr.isEmpty()) {
+          final var p1 = prk.getPrimeP().subtract(ONE);
+          final var q1 = prk.getPrimeQ().subtract(ONE);
+          final var dNaive = prk.getPublicExponent().modInverse(p1.multiply(q1));
+          final var compare =
+              String.format("dNaive.comp(d) = %d", dNaive.compareTo(prk.getPrivateExponent()));
+          cumulatedCheckResult.add(compare);
+          LOGGER.atInfo().log("{}", compare);
+        } else {
+          cumulatedCheckResult.add(cr);
+        } // end else
+      } // end For (i...)
+    } catch (IOException e) {
+      fail(UNEXPECTED, e);
+    } // end Catch (...)
+    LOGGER.atInfo().log("cumulatedCheckResult = {}", cumulatedCheckResult);
+  } // end method */
+
+  /** Check RSA keys from image files. */
+  @org.junit.jupiter.api.Disabled
+  @Test
+  void test_zzz_checkRsaKeys_3() {
+    // Assertions:
+    // - none -
+
+    // Test strategy:
+    // --- define path and desired suffix
+    final var home = System.getProperty("user.home");
+    final var root = Paths.get(home, "tmp");
+    assertTrue(Files.isDirectory(root));
+    final var suffix = ".xml";
+    final var trigger = "PrivateRsaKey";
+    String keyName = "";
+
+    // --- search for regular files in path with desired suffix
+    final var cumulatedCheckResult = new TreeSet<String>();
+    try (Stream<Path> walker = Files.walk(root)) {
+      final var list =
+          walker.filter(Files::isRegularFile).filter(p -> p.toString().endsWith(suffix)).toList();
+      for (final var i : list) {
+        LOGGER.atInfo().log("path: {}", i);
+        final var fileName = String.format("%s", i.getFileName());
+        final var lines = Files.readAllLines(i, StandardCharsets.UTF_8);
+        final var iterator = lines.iterator();
+
+        boolean keyFlag = false;
+        while (iterator.hasNext()) {
+          final var line = iterator.next().trim();
+          if (keyFlag) {
+            if (line.startsWith("<attribute id=\"n\">")) {
+              try {
+                final var n = extract(line);
+                final var e = extract(iterator.next().trim());
+                final var d = extract(iterator.next().trim());
+                final var p = extract(iterator.next().trim());
+                final var q = extract(iterator.next().trim());
+                final var dp = extract(iterator.next().trim());
+                final var dq = extract(iterator.next().trim());
+                final var c = extract(iterator.next().trim());
+                final var prk = new RsaPrivateCrtKeyImpl(n, e, d, p, q, dp, dq, c); // NOPMD new
+                final var cr = prk.check();
+                LOGGER.atInfo().log("{}, {}: \"{}\"", fileName, keyName, cr);
+
+                if (cr.isEmpty()) {
+                  final var p1 = p.subtract(ONE);
+                  final var q1 = q.subtract(ONE);
+                  final var dNaive = e.modInverse(p1.multiply(q1));
+                  final var compare = String.format("dNaive.comp(d) = %d", dNaive.compareTo(d));
+                  cumulatedCheckResult.add(compare);
+                  LOGGER.atInfo().log("dNaive.compare(d) = {}", compare);
+                } // end fi
+                cumulatedCheckResult.add(cr);
+                LOGGER.atInfo().log("{}, {}: \"{}\"", fileName, keyName, cr);
+
+                keyFlag = false;
+              } catch (NumberFormatException e) {
+                LOGGER.atInfo().log("{}, {}: {}", fileName, keyName, line);
+                keyFlag = false;
+              } // end Catch (...)
+            } // end fi
+          } else {
+            keyFlag = line.contains(trigger);
+            if (keyFlag) {
+              final var split = line.split("\"");
+              keyName = split[1];
+            } // end fi
+          } // end else
+        } // endWhile (hasNext)
+      } // end For (i...)
+    } catch (IOException e) {
+      fail(UNEXPECTED, e);
+    } // end Catch (...)
+    LOGGER.atInfo().log("cumulatedCheckResult = {}", cumulatedCheckResult);
+  } // end method */
+
+  private BigInteger extract(final String line) {
+    final var startIndex = line.indexOf('>') + 1;
+    final var endIndex = line.indexOf('<', startIndex);
+    final var value = line.substring(startIndex, endIndex);
+
+    return new BigInteger(value, 16);
+  } // end method */

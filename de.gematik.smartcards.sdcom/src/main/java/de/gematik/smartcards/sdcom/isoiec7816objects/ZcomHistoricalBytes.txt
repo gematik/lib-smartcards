@@ -1,0 +1,599 @@
+public final class ZcomHistoricalBytes implements Serializable {
+  /*
+   * Explain historical bytes
+       // --- Historical Bytes
+     final byte[] hb = getHistoricalBytes().getHistoricalBytes();
+     result.add(String.format(prefix + "Historical Bytes         ='%s'", Hex.toHexDigits(hb)));
+     if (hb.length > 0) {
+       final int categoryIndicatorByte = hb[0] & 0xff;
+       tmp = String.format(
+           prefix
+               + "  CategoryIndicatorByte  :'%02x' => ",
+           categoryIndicatorByte
+       );
+
+       if ((0x00 == categoryIndicatorByte) || (0x80 == categoryIndicatorByte)) {
+         // ... see ISO/IEC 7816-4:2013 table 114
+         result.add(tmp + "coding according to ISO/IEC 7816-4:2013 clause 12.1.1");
+
+         // Note: the structure for an ATR with category indicator from set {00, 80}
+         //       is specified in ISO/IEC 7816-4:2013 clause 12.1.1.2.
+
+         int index = 1; // i.e. first octet after category indicator byte
+         while (index < hb.length) {
+           if ((0x00 == categoryIndicatorByte) && ((index + 3) == hb.length)) {
+             // ... categoryIndicator=00  and  last three bytes to be interpreted,
+             //     see ISO/IEC 7816-4:2013 clause 12.1.1.11
+             final int lcs = hb[index++] & 0xff;
+             result.add(String.format(
+                 prefix + "  CardLifeCycleStatusByte:'%02x' => %s",
+                 lcs,
+                 LifeCycleStatus.getInstance(lcs)
+             ));
+
+             final int sw1 = hb[index++] & 0xff;
+             final int sw2 = hb[index++] & 0xff;
+             result.add(String.format(
+                 prefix + "  StatusBytes SW1-SW2    :'%02x %02x'",
+                 sw1,
+                 sw2
+             ));
+           } else {
+             // ... either 80 as category indicator  or  not the last three bytes
+             //     => interpret compact-TLV
+             int tag = (hb[index] & 0xf0) >> 4;
+             int len = hb[index] & 0x0f;
+             tmp = String.format(
+                 prefix + "  Tag-Length='4%x 0%x'     :'%02x-",
+                 tag,
+                 len,
+                 hb[index++]
+             );
+             switch (tag) {
+               // ... country code, see ISO/IEC 7816-4:2013 table 115 and table 16
+               case 0x1 -> result.add(
+                   tmp + String.format(
+                       "%s' => country code and optional national data",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               ); // end case 0x1
+
+               // ... issuer identifier, see ISO/IEC 7816-4:2013 table 115 and table 16
+               case 0x2 -> result.add(
+                   tmp + String.format(
+                       "%s' => issuer identification number and optional issuer data",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               ); // end case 0x2
+
+               // ... card service data, see ISO/IEC 7816-4:2013, clause 12.1.1.5
+               case 0x3 -> result.add(
+                   tmp + String.format(
+                       "%s' => card service data%s",
+                       Hex.toHexDigits(hb, index, len),
+                       explainCardServiceDataByte(prefix, hb, index, len)
+                   )
+               ); // end case 0x3
+
+               // ... initial data access, see ISO/IEC 7816-4:2013 clause 12.1.1.6
+               case 0x4 -> {
+                 tmp += String.format(
+                     "%s' => initial data access via ",
+                     Hex.toHexDigits(hb, index, len)
+                 );
+
+                 // Note: the interpretation of the initial data access is specified in
+                 //      ISO/IEC 7816-4:2013 clause 12.1.2.
+                 if (1 == len) {
+                   // ... one byte => Le field of Read Binary command
+                   result.add(String.format(
+                       tmp + "READ BINARY command with P1P2='0000' and Le-field='%02x'",
+                       hb[index] & 0xff
+                   ));
+                 } else if (2 == len) {
+                   // ... two bytes => SFI plus Le-field
+                   final int firstByte = hb[index] & 0xff;
+                   final int leField = hb[index + 1] & 0xff;
+                   final boolean isTransparent = (0x80 == (firstByte & 0x80));
+                   final int sfi = firstByte & 0x1f;
+                   if (isTransparent) {
+                     result.add(String.format(
+                         tmp + "READ BINARY command '00 B0 %02x00 %02x'",
+                         (0 == sfi) ? 0 : firstByte,
+                         leField
+                     ));
+                   } else {
+                     result.add(String.format(
+                         tmp + "READ RECORD(s) command '00 B2 01%02x %02x'",
+                         (sfi << 3) + 0x6,
+                         leField
+                     ));
+                   } // end fi
+                 } else if (len >= 5) {
+                   // ... five bytes or more => command APDU
+                   result.add(tmp + "command APDU from value field of this compact TLV DO");
+                 } else {
+                   // ... 0, 3 or 4 bytes, RFU
+                   result.add(tmp + "unknown command due to invalid coding");
+                 } // end fi
+               } // end case 0x4
+
+               // ... card issuer data, see ISO/IEC 7816-4:2013 clause 12.1.1.7
+               case 0x5 -> result.add(
+                   tmp + String.format(
+                       "%s' => card issuer data",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               );
+               // end case 0x5
+
+               // ... pre-issuing data object, see ISO/IEC 7816-4:2013 clause 12.1.1.8
+               case 0x6 -> result.add(
+                   tmp + String.format(
+                       "%s' => pre-issuing data",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               ); // end case 0x6
+
+               // ... card capabilities, see ISO/IEC 7816-4:2013 clause 12.1.1.9
+               case 0x7 -> result.add(
+                   tmp + String.format(
+                       "%s' => card capabilities%s",
+                       Hex.toHexDigits(hb, index, len),
+                       explainCardCapabilities(prefix, hb, index, len)
+                   )
+               ); // end case 0x7
+
+               case 0x8 -> { // ... status indicator, see ISO/IEC 7816-4:2013 clause 12.1.1.11
+                 result.add(
+                     tmp + String.format(
+                         "%s' => status indicator" + ((0 == len) ? ", empty DO" : ""),
+                         Hex.toHexDigits(hb, index, len)
+                     )
+                 );
+
+                 if ((1 == len) || (3 <= len)) {
+                   // ... one byte or at least three
+                   final int lcs = hb[index++] & 0xff;
+                   result.add(prefix + String.format(
+                       "      CardLifeCycleStatus:   '%02x' => %s",
+                       lcs,
+                       LifeCycleStatus.getInstance(lcs)
+                   ));
+                   len--; // thus, len covers unread bytes in this DO
+                 } // end fi (LCS available)
+
+                 if (2 <= len) {
+                   // ... at least two remaining bytes
+                   final int sw1 = hb[index++] & 0xff;
+                   final int sw2 = hb[index++] & 0xff;
+                   result.add(prefix + String.format(
+                       "      StatusBytes SW1-SW2:   '%02x %02x'",
+                       sw1,
+                       sw2
+                   ));
+                   len -= 2; // thus, len covers unread bytes in this DO
+                 } // end fi (SW1-SW2 present)
+               } // end case 0x8
+
+               // ... application family identifier, see ISO/IEC 7816-4:2013 clause 12.1.1.10
+               case 0x9 -> result.add(
+                   tmp + String.format(
+                       "%s' => application family identifier",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               ); // end case 0x9
+
+               // ... application identifier, see ISO/IEC 7816-4:2013 clause 12.1.1.4
+               case 0xf -> result.add(
+                   tmp + String.format(
+                       "%s' => application identifier",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               ); // end case 0xf
+
+               default -> result.add(
+                   tmp + String.format(
+                       "%s' => ???",
+                       Hex.toHexDigits(hb, index, len)
+                   )
+               );
+               // end default
+             } // end Switch (tag)
+             index += len;
+           } // end else
+         } // end while index
+         // end HistoricalBytes according to ISO/IEC 7816-4
+       } else if ((0x81 <= categoryIndicatorByte) && (categoryIndicatorByte <= 0x8f)) {
+         // ... category indicator is RFU see ISO/IEC 7816-4:2013 table 114
+         result.add(tmp + "coding is RFU");
+       } else {
+         // ... see ISO/IEC 7816-4:2013 table 114
+         result.add(tmp + "proprietary coding");
+       } // end fi (categoryIndicatorByte)
+     } // end fi (HistoricalBytes present)
+  */
+
+  /*
+   * Explanation for card capabilities.
+   *
+   * @param prefix
+   *     indentation for each line of output
+   * @param hb
+   *     historical bytes
+   * @param index
+   *     at which DO Card Capabilities start
+   * @param len
+   *     length of DO Card Capabilities
+   *
+   * @return human-readable explanation of Card Capabilities
+   *
+  @VisibleForTesting // otherwise = private
+  /* package * static String explainCardCapabilities(
+      final String prefix,
+      final byte[] hb,
+      int index,
+      final int len
+  ) {
+    final String p = prefix + "                                - ";
+    final List<String> result = new ArrayList<>();
+
+    // Note: the interpretation of card capabilities is specified in
+    // ISO/IEC 7816-4:2013 clause 12.1.1.9.
+
+    if (0 == len) {
+      // ... empty DO
+      result.add(", empty DO");
+    } // end fi
+
+    if (1 <= len) {
+      // ... 1st byte present => interpret it
+      result.add(" indicating");
+
+      final int cc1 = hb[index] & 0xff;
+      result.add(String.format(
+          prefix + "     selection methods   :   '%02x' indicating:",
+          cc1
+      ));
+      result.add(
+          p
+              + "b8: DF selection by full DF name "
+              + ((0 == (cc1 & 0x80)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b7: DF selection by partial DF name "
+              + ((0 == (cc1 & 0x40)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b6: DF selection by path "
+              + ((0 == (cc1 & 0x20)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b5: DF selection by file identifier "
+              + ((0 == (cc1 & 0x10)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b4: implicit DF selection "
+              + ((0 == (cc1 & 0x08)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b3: short EF identifier "
+              + ((0 == (cc1 & 0x04)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b2: record number "
+              + ((0 == (cc1 & 0x02)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b1: record identifier "
+              + ((0 == (cc1 & 0x01)) ? "not " : "")
+              + "supported")
+      ;
+    } // end fi (1st byte available)
+
+    if (2 <= len) {
+      // ... 2nd byte present => interpret it
+
+      final int cc2 = hb[index + 1] & 0xff;
+      result.add(String.format(
+          prefix + "     data coding byte    :   '%02x' indicating:", cc2
+      ));
+      result.add(
+          p
+              + "b8:     EFs of TLV structure "
+              + ((0 == (cc2 & 0x80)) ? "not " : "")
+              + "supported"
+      );
+
+      // end switch
+      final String writeFunction = switch ((cc2 & 0x60) >> 5) {
+        case 0 -> "one-time-write";
+        case 1 -> "proprietary";
+        case 2 -> "write OR";
+        default -> "write AND";
+      };
+      result.add(p + "b7,b6:  behavior of write function = " + writeFunction);
+
+      result.add(
+          p
+              + "b5:     value 'FF' for the first byte of BER-TLV tag fields is "
+              + (0 == (cc2 & 0x10) ? "in" : "")
+              + "valid"
+      );
+
+      final int dataUnitSize = 4 << (cc2 & 0xf);
+      if (dataUnitSize < 8) {
+        result.add(p + "b4..b1: DataUnitSize = " + dataUnitSize + " bit");
+      } else {
+        result.add(p + "b4..b1: DataUnitSize = " + (dataUnitSize >> 3) + " octet");
+      } // end fi
+    } else {
+      // ... 2nd byte absent => inform about default value
+      result.add(p + "DataUnitSize = 1 octet");
+    } // end fi (2nd byte available?)
+
+    if (3 <= len) {
+      // ... 3rd byte present => interpret it
+
+      final int cc3 = hb[index + 2] & 0xff;
+      result.add(String.format(prefix + "     miscellaneous       :   '%02x' indicating:%n", cc3));
+      result.add(
+          p
+              + "b8:     command chaining " + ((0 == (cc3 & 0x80)) ? "not " : "")
+              + "supported"
+      );
+      result.add(
+          p
+              + "b7:     extended Lc and Le fields "
+              + ((0 == (cc3 & 0x40)) ? "not " : "") + "supported"
+      );
+      result.add(
+          p
+              + "b6:     extended length information in EF.ATR/INFO "
+              + ((0 == (cc3 & 0x20)) ? "absent" : "present")
+      );
+
+      // end switch
+      final String assign = switch ((cc3 & 0x18) >> 3) {
+        case 0 -> "only basic logical channel available";
+        case 1 -> "logical channel numbers assigned by the interface device";
+        case 2 -> "logical channel numbers assigned by the card";
+        default -> "logical channel numbers assigned by the card or IFD";
+      };
+      result.add(p + "b5,b4:  " + assign);
+
+      if (0 != (cc3 & 0x18)) {
+        // ... more than basic logical channel available
+        final int noLogicalChannels = (cc3 & 0x7) + 1;
+        result.add(
+            p
+                + "b3..b1: maximum number of logical channels "
+                + ((noLogicalChannels < 8) ? ("= " + noLogicalChannels) : ">= 8")
+        );
+      } // end fi (logical channels supported)
+    } // end fi (3rd byte available)
+
+    return result.stream()
+        .collect(Collectors.joining(LINE_SEPARATOR));
+  } // end method */
+
+  /*
+   * Explanation for card service data byte.
+   *
+   * @param prefix
+   *     indentation for each line of output
+   * @param hb
+   *     historical bytes
+   * @param index
+   *     at which DO Card Capabilities start
+   * @param len
+   *     length of DO Card Capabilities
+   *
+   * @return human-readable explanation of Card Service Data Byte
+   *
+  @VisibleForTesting // otherwise = private
+  /* package * static String explainCardServiceDataByte(
+      final String prefix,
+      final byte[] hb,
+      int index,
+      final int len
+  ) {
+    final String p = prefix + "                             - ";
+    final StringBuilder result = new StringBuilder();
+
+    if (0 == len) {
+      // ... empty DO
+      result.append(", empty DO");
+    } else {
+      // ... at least one byte in value-field of DO, just interpret that
+      // Note: the interpretation of the Card Service Data byte is specified in
+      //       ISO/IEC 7816-4:2013 table 116.
+      final int csd = hb[index] & 0xff;
+
+      result.append(String.format(" indicating%n"));
+
+      if (0 != (csd & 0x80)) {
+        result.append(String.format(p + "b8:     application selection by full DF name%n"));
+      } // end fi (b8 set)
+
+      if (0 != (csd & 0x40)) {
+        result.append(String.format(p + "b7:     application selection by partial DF name%n"));
+      } // end fi (b7 set)
+
+      if (0 != (csd & 0x20)) {
+        result.append(String.format(p + "b6:     BER-TLV data objects available in EF.DIR%n"));
+      } // end fi (b6 set)
+
+      if (0 != (csd & 0x10)) {
+        result.append(String.format(p + "b5:     BER-TLV data objects available in EF.ATR/INFO%n"));
+      } // end fi (b5 set)
+
+      if (0 != (csd & 0x30)) {
+        // ... EF.DIR  or  EF.ATR  or  both available
+        // end switch
+        final String tmp = switch (csd & 0x0e) {
+          case 0x8 -> "READ BINARY";
+          case 0x0 -> "READ RECORD(s)";
+          case 0x4 -> "GET DATA";
+          default -> "RFU";
+        };
+        result.append(String.format(
+            p
+                + "b4..b2: EF.DIR and EF.ATR/INFO access services by the "
+                + tmp
+                + " command%n"
+        ));
+      } // end fi (EF.DIR and/or EF.ATR indicated)
+
+      result
+          .append(p)
+          .append("b1:     card with")
+          .append((0 == (csd & 0x1)) ? "" : "out")
+          .append(" MF");
+    } // end fi
+
+    return result.toString();
+  } // end method */
+
+  /*
+   * Explanation for pre-issuing data object.
+   *
+   * @param prefix
+   *     information used as prefix for each line of output
+   * @param hb
+   *     historical bytes
+   * @param index
+   *     at which Pre-Issuing DO starts
+   * @param len
+   *     length of Pre-Issuing DO
+   *
+   * @return human-readable explanation of Pre-Issuing DO
+   *
+  @VisibleForTesting // otherwise = private
+  /* package * static String explainPreIssuingDataObject(
+      final String prefix,
+      final byte[] hb,
+      int index,
+      int len
+  ) {
+    // Note 1: the interpretation of pre-issuing data objects is specified
+    //         neither in ISO/IEC 7816-3 nor ISO/IEC 7186-4.
+    if (len < 7) {
+      // ... unknown coding => don't explain anything
+      return "";
+    } // end fi
+    // ... length >= 7
+    // Note 2: the following code is based on [gemSpec_Karten_Fach_TIP#Card-G2-A_3487 item d)]
+    //         version 2.6.0.
+
+    final StringBuilder result = new StringBuilder(String.format("%n"));
+
+    int offset = 0;
+    while (offset++ < len) {
+      int b = hb[index++] & 0xff;
+      switch (offset) {
+        case 1 -> {
+          result.append(String.format(prefix + "   IC manufacturer ID    :   '%02x' => ", b));
+          try {
+            result.append((new String[]{
+                /* 00 * "???",
+                /* 01 * "Motorola UK",
+                /* 02 * "STMicroelectronics SA France",
+                /* 03 * "Hitachi, Ltd Japan",
+                /* 04 * "NXP Semiconductors Germany",
+                /* 05 * "Infineon Technologies AG Germany",
+                /* 06 * "Cylink USA",
+                /* 07 * "Texas Instrument France",
+                /* 08 * "Fujitsu Limited Japan",
+                /* 09 * "Matsushita Electronics Corporation, Semiconductor Company Japan",
+                /* 0A * "NEC Japan",
+                /* 0B * "Oki Electric Industry Co. Ltd Japan",
+                /* 0C * "Toshiba Corp. Japan",
+                /* 0D * "Mitsubishi Electric Corp. Japan",
+                /* 0E * "Samsung Electronics Co. Ltd Korea",
+                /* 0F * "Hynix Korea",
+                /* 10 * "LG-Semiconductors Co. Ltd Korea",
+                /* 11 * "Emosyn-EM Microelectronics USA",
+                /* 12 * "INSIDE Technology France",
+                /* 13 * "ORGA Kartensysteme GmbH Germany",
+                /* 14 * "SHARP Corporation Japan",
+                /* 15 * "ATMEL France",
+                /* 16 * "EM Microelectronic-Marin SA Switzerland",
+                /* 17 * "KSW Microtec GmbH Germany",
+                /* 18 * "ZMD AG Germany",
+                /* 19 * "XICOR, Inc. USA",
+                /* 1A * "Sony Corporation Japan",
+                /* 1B * "Malaysia Microelectronic Solutions Sdn. Bhd Malaysia",
+                /* 1C * "Emosyn USA",
+                /* 1D * "Shanghai Fudan Microelectronics Co. Ltd. P.R. China",
+                /* 1E * "Magellan Technology Pty Limited Australia",
+                /* 1F * "Melexis NV BO Switzerland",
+                /* 20 * "Renesas Technology Corp. Japan",
+                /* 21 * "TAGSYS France",
+                /* 22 * "Transcore USA",
+                /* 23 * "Shanghai belling corp., ltd. China",
+                /* 24 * "Masktech Germany Gmbh Germany",
+                /* 25 * "Innovision Research and Techology Plc UK",
+                /* 26 * "Hitachi ULSI Systems Co., Ltd. Japan",
+                /* 27 * "Cypak AB Sweden",
+                /* 28 * "Ricoh Japan",
+                /* 29 * "ASK France",
+                /* 2A * "Unicore Microsystems, LLC Russian Federation",
+                /* 2B * "Dallas Semiconductor/Maxim USA",
+                /* 2C * "Impinj, Inc. USA",
+                /* 2D * "RightPlug Alliance USA",
+            })[b]);
+          } catch (ArrayIndexOutOfBoundsException e) {
+            result.append("???");
+          } // end catch
+          result.append(String.format("%n"));
+        } // end offset=1
+
+        case 2 -> {
+          result.append(String.format(prefix + "   IC type               :   '%02x", b));
+          if (b > 127) {
+            // here len is reduced rather than offset is increased
+            // reason: this way offset also codes the type of data
+            len--;
+            b = hb[index++] & 0xff;
+            result.append(String.format("%02x", b));
+          } // end fi (2nd byte of IC type present)
+          result.append(String.format("'%n"));
+        } // end offset=2
+
+        case 3 -> result.append(String.format(
+            prefix + "   OperatingSystemVersion:   '%02x'%n",
+            b
+        )); // end offset=3
+
+        case 4 -> {
+          result.append(String.format(prefix + "   DiscretionaryData     :   '%02x", b));
+          while (offset++ < len) {
+            result.append(String.format("%02x", (hb[index++] & 0xff)));
+          } // end while
+          result.append("'");
+        } // end offset=4
+
+        default -> {
+        }
+        // TODO ?
+      } // end Switch (offset)
+    } // endWhile (offset...)
+
+    return result.toString();
+  } // end method */
+} // end class

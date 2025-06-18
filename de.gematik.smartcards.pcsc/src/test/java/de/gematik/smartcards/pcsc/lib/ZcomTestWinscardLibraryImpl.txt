@@ -1,0 +1,229 @@
+
+  /**
+   * Test method for {@link WinscardLibraryImpl#scardStatus}.
+   *
+   * <p>This is a test with manually chosen parameter.
+   */
+  @Test
+  @org.junit.jupiter.api.Disabled
+  void test_zzAfi_scardStatus__manualChosenInput() {
+    LOGGER.atTrace().log("test_scardStatus__manualChosenInput");
+    // Assertions:
+    // ... a. getListOfReaders(boolean)-method (in this class) works as expected
+    // ... b. scardEstablishContext(...)-method works as expected
+    // ... c. scardConnect(...)-method works as expected
+    // ... d. scardDisconnect(...)-method works as expected
+    // ... e. scardReleaseContext(...)-method works as expected
+
+    // Observations:
+    // - none -
+
+    // Test strategy:
+    // --- a. smoke test
+
+    final var part = READER_NAMES[2];
+    final var scope = SCARD_SCOPE_SYSTEM;
+    final var shareMode = SCARD_SHARE_SHARED;
+    final var preferredProtocol = SCARD_PROTOCOL_T1;
+    final var disconnect = SCARD_EJECT_CARD;
+
+    final String name =
+        getListOfReaders(false).stream().filter(n -> n.contains(part)).findAny().orElseThrow();
+
+    final ScardContextByReference phContext = new ScardContextByReference();
+    final ScardHandleByReference phCard = new ScardHandleByReference();
+    final DwordByReference pdwActiveProtocol = new DwordByReference();
+
+    // scardEstablishContext
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardEstablishContext(
+            new Dword(scope), // scope NOPMD new in loop
+            null, // phReserved1
+            null, // phReserved2
+            phContext // phContext
+            ));
+    final ScardContext context = phContext.getValue();
+
+    // scardConnect
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardConnect(
+            context, name, shareMode, preferredProtocol, phCard, pdwActiveProtocol));
+    assertEquals(preferredProtocol, pdwActiveProtocol.getValue().intValue());
+    final ScardHandle scardHandle = phCard.getValue();
+
+    // vvvvvvvvvvvvvvvvvvvvvvv    method-under-test   vvvvvvvvvvvvvvvvvvvvvvvvvv
+    final DwordByReference pdwState = new DwordByReference();
+    final DwordByReference pdwProtocol = new DwordByReference();
+    final byte[] atr = new byte[AnswerToReset.MAX_ATR_SIZE];
+    final ByteBuffer pbAtr = ByteBuffer.wrap(atr);
+    final DwordByReference pcbAtrLen = new DwordByReference(new Dword(pbAtr.remaining()));
+    pbAtr.put(Hex.toByteArray("affd"));
+
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardStatus(
+            scardHandle,
+            null, // mszReader
+            new DwordByReference(), // pcchReaderLen, here = 0
+            pdwState,
+            pdwProtocol,
+            pbAtr,
+            pcbAtrLen));
+    // ^^^^^^^^^^^^^^^^^^^^^^^    method-under-test   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    // scardDisconnect
+    assertEquals(SCARD_S_SUCCESS, IMPLEMENTATION.scardDisconnect(scardHandle, disconnect));
+
+    // scardReleaseContext
+    assertEquals(SCARD_S_SUCCESS, IMPLEMENTATION.scardReleaseContext(context));
+  } // end method */
+
+  /**
+   * Test method for {@link WinscardLibraryImpl#scardTransmit}.
+   *
+   * <p>This is a test with manually chosen parameter.
+   */
+  @Test
+  @org.junit.jupiter.api.Disabled
+  void test_zzAfi_scardTransmit__manualChosenInput() {
+    LOGGER.atTrace().log("test_scardTransmit__manualChosenInput");
+    // Assertions:
+    // ... a. getListOfReaders(boolean)-method (in this class) works as expected
+    // ... b. scardEstablishContext(...)-method works as expected
+    // ... c. scardConnect(...)-method works as expected
+    // ... d. scardDisconnect(...)-method works as expected
+    // ... e. scardReleaseContext(...)-method works as expected
+
+    // Observations:
+    // - none -
+
+    // Test strategy:
+    // --- a. smoke test
+
+    final var part = READER_NAMES[2];
+    final var scope = SCARD_SCOPE_SYSTEM;
+    final var shareMode = SCARD_SHARE_SHARED;
+    final var preferredProtocol = SCARD_PROTOCOL_T1;
+    final var disconnect = SCARD_EJECT_CARD;
+
+    final String name =
+        getListOfReaders(false).stream().filter(n -> n.contains(part)).findAny().orElseThrow();
+
+    final ScardContextByReference phContext = new ScardContextByReference();
+    final ScardHandleByReference phCard = new ScardHandleByReference();
+    final DwordByReference pdwActiveProtocol = new DwordByReference();
+
+    // scardEstablishContext
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardEstablishContext(
+            new Dword(scope), // scope NOPMD new in loop
+            null, // phReserved1
+            null, // phReserved2
+            phContext // phContext
+            ));
+    final ScardContext context = phContext.getValue();
+
+    // scardConnect
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardConnect(
+            context, name, shareMode, preferredProtocol, phCard, pdwActiveProtocol));
+    assertEquals(preferredProtocol, pdwActiveProtocol.getValue().intValue());
+    final ScardHandle scardHandle = phCard.getValue();
+
+    // vvvvvvvvvvvvvvvvvvvvvvv    method-under-test   vvvvvvvvvvvvvvvvvvvvvvvvvv
+    // ReadBinary EF.GDO with SFI
+    final ScardIoRequest pioSendPci = new ScardIoRequest();
+    pioSendPci.dwProtocol = pdwActiveProtocol.getValue();
+    pioSendPci.cbPciLength = new Dword(pioSendPci.size());
+    final byte[] apdu = new ReadBinary(2, 0, CommandApdu.NE_SHORT_WILDCARD).getBytes();
+    final byte[] recvBufer = new byte[14];
+    final ByteBuffer pbRecvBuffer = ByteBuffer.wrap(recvBufer);
+    pbRecvBuffer.put(Hex.toByteArray("11"));
+    final DwordByReference pcbRecvLength = new DwordByReference(new Dword(recvBufer.length));
+    final double[] runTime = new double[1];
+
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardTransmit(
+            scardHandle,
+            pioSendPci,
+            apdu,
+            null, // IMPLEMENTATION.getScardPciT1(), // pioRecvPci
+            pbRecvBuffer,
+            pcbRecvLength,
+            runTime));
+    final double time = runTime[0];
+    LOGGER.atTrace().log("runTime = {} ms", 1000 * time);
+    // ^^^^^^^^^^^^^^^^^^^^^^^    method-under-test   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    // scardDisconnect
+    assertEquals(SCARD_S_SUCCESS, IMPLEMENTATION.scardDisconnect(scardHandle, disconnect));
+
+    // scardReleaseContext
+    assertEquals(SCARD_S_SUCCESS, IMPLEMENTATION.scardReleaseContext(context));
+  } // end method */
+
+  /**
+   * Test method for {@link WinscardLibraryImpl#scardDisconnect(ScardHandle, int)}.
+   *
+   * <p>This is a test with manually chosen parameter.
+   */
+  @Test
+  @org.junit.jupiter.api.Disabled
+  void test_zzAfi_scardDisconnect__manualChosenInput() {
+    LOGGER.atTrace().log("test_scardDisconnect__manualChosenInput");
+    // Assertions:
+    // ... a. scardEstablishContext(...)-method works as expected
+    // ... b. scardConnect(...)-method works as expected
+    // ... c. scardDisconnect(...)-method works as expected
+    // ... d. scardReleaseContext(...)-method works as expected
+
+    // Observations:
+    // - none -
+
+    // Test strategy:
+    // --- a. smoke test
+
+    final var part = READER_NAMES[2];
+    final var scope = SCARD_SCOPE_SYSTEM;
+    final var shareMode = SCARD_SHARE_SHARED;
+    final var preferredProtocol = SCARD_PROTOCOL_T1;
+    final var disconnect = SCARD_EJECT_CARD;
+
+    final String name =
+        getListOfReaders(false).stream().filter(n -> n.contains(part)).findAny().orElseThrow();
+
+    final ScardContextByReference phContext = new ScardContextByReference();
+    final ScardHandleByReference phCard = new ScardHandleByReference();
+    final DwordByReference pdwActiveProtocol = new DwordByReference();
+
+    // scardEstablishContext
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardEstablishContext(
+            new Dword(scope), // scope NOPMD new in loop
+            null, // phReserved1
+            null, // phReserved2
+            phContext // phContext
+            ));
+    final ScardContext context = phContext.getValue();
+
+    // scardConnect
+    assertEquals(
+        SCARD_S_SUCCESS,
+        IMPLEMENTATION.scardConnect(
+            context, name, shareMode, preferredProtocol, phCard, pdwActiveProtocol));
+    assertEquals(preferredProtocol, pdwActiveProtocol.getValue().intValue());
+
+    // vvvvvvvvvvvvvvvvvvvvvvv    method-under-test   vvvvvvvvvvvvvvvvvvvvvvvvvv
+    // scardDisconnect
+    assertEquals(SCARD_S_SUCCESS, IMPLEMENTATION.scardDisconnect(phCard.getValue(), disconnect));
+    // ^^^^^^^^^^^^^^^^^^^^^^^    method-under-test   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    // scardReleaseContext
+    assertEquals(SCARD_S_SUCCESS, IMPLEMENTATION.scardReleaseContext(context));
+  } // end method */
