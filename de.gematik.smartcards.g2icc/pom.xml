@@ -4,12 +4,12 @@
   <parent>
     <groupId>de.gematik.smartcards</groupId>
     <artifactId>lib-smartcards</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>de.gematik.smartcards.g2icc</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
 
   <description>Generation 2 functionality</description>
 
