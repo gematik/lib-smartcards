@@ -1,0 +1,283 @@
+/*
+ *  Copyright 2024 Dr.-Ing. gematik GmbH
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package de.gematik.smartcards.pcsc;
+
+import static de.gematik.smartcards.utils.AfiUtils.UNEXPECTED;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
+import de.gematik.smartcards.sdcom.apdu.CommandApdu;
+import de.gematik.smartcards.sdcom.apdu.isoiec7816apdu.ReadBinary;
+import de.gematik.smartcards.utils.AfiMean;
+import java.util.List;
+import java.util.stream.Collectors;
+import javax.smartcardio.CardException;
+import javax.smartcardio.CardTerminal;
+import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
+import javax.swing.ButtonModel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Class used for measuring the performance of a smart card.
+ *
+ * <p><i><b>
+ * Note:</b> It is intended, that this class is disabled during build, because
+ *      the methods in this class are intended to be executed manually one-by-one.
+ *</i>
+ *
+ * @author <a href="mailto:software-development">gematik.de</a>
+ */
+@org.junit.jupiter.api.Disabled
+@SuppressWarnings({
+    "PMD.MethodNamingConventions"
+})
+final class TestPerformance {
+  /**
+   * Logger.
+   */
+  private static final Logger LOGGER = LoggerFactory.getLogger(TestPerformance.class); // */
+
+  /**
+   * Execution time in seconds per test.
+   */
+  private static final double EXECUTION_TIME = 60.0; // */
+
+  /**
+   * Name of smart card reader used for testing, if empty, then manually chosen.
+   */
+  private static final String NAME_PREFERRED_IFD =
+      "Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (53691324212792) 02 00"; // */
+
+  /**
+   * Command "LIST PUBlIC KEY".
+   */
+  @Test
+  void test_zzAfi_ListPublicKey() {
+    LOGGER.atInfo().log("test_zzAfi_ListPublicKey");
+
+    try (IfdCollection ifdCollection = new IfdCollection()) {
+      final List<CardTerminal> cardTerminals = ifdCollection.list();
+      LOGGER.atTrace().log("noIfd = {}", cardTerminals.size());
+      assertFalse(cardTerminals.isEmpty());
+      // ... at least one IFD present
+
+      String nameIfd = cardTerminals.stream()
+          .map(CardTerminal::getName)
+          .filter(NAME_PREFERRED_IFD::equals)
+          .findAny()
+          .orElse("");
+      if (nameIfd.isEmpty()) {
+        // ... preferred IFD absent (or no preferred IFD name in command line arguments
+        //     => select IFD manually
+        nameIfd = getCardTerminalName(cardTerminals);
+      } // end fi
+      LOGGER.atInfo().log("use IFD: \"{}\"", nameIfd);
+
+      performTest(
+          ifdCollection.getTerminal(nameIfd),
+          new CommandApdu(
+              0x80, 0xca, 0x01, 0x00, // command header of LIST PUBLIC KEY
+              CommandApdu.NE_EXTENDED_WILDCARD
+          ),
+          0x9000
+      );
+    } catch (CardException e) {
+      LOGGER.atError().log(UNEXPECTED, e);
+    } // end catch (...)
+  } // end method */
+
+  /**
+   * Do performance test.
+   *
+   * @param ifd
+   *     Interface Device (card terminal) used for tests
+   * @param cmd
+   *     command APDU under test
+   * @param esw
+   *     expected status word
+   */
+  private void performTest(
+      final CardTerminal ifd,
+      final CommandApdu cmd,
+      final int ... esw
+  ) throws CardException {
+    Icc icc;
+
+    // --- test 10 times
+    icc = (Icc) ifd.connect("T=1");
+    LOGGER.atTrace().log("connected with protocol {}", icc.getProtocol());
+    prepareIcc(icc);
+    final double[] t1 = new double[10];
+    for (int i = t1.length; i-- > 0;) { // NOPMD assignments in operands
+      icc.send(cmd, esw);
+      t1[i] = icc.getTime();
+    } // end for (i...)
+    icc.disconnect(true);
+    final var mean = new AfiMean(t1);
+    LOGGER.atDebug().log("mean: {}", mean);
+
+    if (mean.getMean() < 10) { // NOPMD literals in if statement
+      return;
+    } // end fi */
+
+    // --- estimate size of array for result
+    final int size = (int) Math.round(Math.ceil(Math.sqrt(EXECUTION_TIME / mean.getMean())));
+    final double[][] table = new double[size][size];
+    final double[] result = new double[size];
+    LOGGER.atInfo().log("size = {}", size);
+
+    // --- perform real test
+    LOGGER.atInfo().log("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv");
+    for (int y = 0; y < size; y++) {
+      icc = (Icc) ifd.connect("T=1");
+      LOGGER.atInfo().log("{}: connected with protocol {}", size - y, icc.getProtocol());
+      prepareIcc(icc);
+
+      for (int x = 0; x < size; x++) {
+        icc.send(cmd, esw);
+        table[x][y] = icc.getTime();
+      } // end for (x...)
+
+      icc.disconnect(true);
+    } // end for (y...)
+    LOGGER.atInfo().log("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^");
+
+    for (int i = size; i-- > 0;) {         // NOPMD assignment in operand
+      final var m = new AfiMean(table[i]); // NOPMD new in loop
+      LOGGER.atTrace().log("{}: {}", i, m);
+      result[i] = m.getMean();
+    } // end for (i...)
+    final var mom = new AfiMean(result);
+    LOGGER.atInfo().log("mean of means: {}", mom);
+  } // end method */
+
+  /**
+   * Prepare the ICC for performance tests.
+   *
+   * <p>It is assumed that the ICC is freshly powered up, i.e., the ATR is sent.
+   * Typically, ICCs need more time thant during the ATR phase for roll-back or
+   * roll-forward. Thus, the ICC performs time-consuming initialization during
+   * the first command-response pair.
+   *
+   * <p>Here, not one but three command APDU are sent:
+   * <ol>
+   *   <li>select the MF,
+   *   <li>read EF.ATR
+   *   <li>read EF.GDO
+   * </ol>
+   */
+  private void prepareIcc(
+      final Icc icc
+  ) {
+    LOGGER.atTrace().log("select MF");
+    icc.send(new CommandApdu("00 a4 040c"), 0x9000);
+
+    LOGGER.atTrace().log("read EF.ATR");
+    icc.send(new ReadBinary(29, 0, CommandApdu.NE_EXTENDED_WILDCARD), 0x9000);
+
+    LOGGER.atTrace().log("read EF.GDO");
+    icc.send(new ReadBinary(2, 0, CommandApdu.NE_SHORT_WILDCARD), 0x9000);
+  } // end method */
+
+  /**
+   * Select one card terminal from (possibly) many for Smart Card communication.
+   *
+   * <p>The method retrieves a list of all card terminals available.
+   * If more than one card terminal is present, then
+   * the user is asked at the GUI which card terminal to use.
+   *
+   * @param ifdList
+   *     list of IFDs (i.e., {@link CardTerminal}
+   *
+   * @return card terminal with a smart card inserted
+   *
+   * @throws CardException if
+   *     <ol>
+   *       <li>retrieving list of available IFD fails
+   *       <li>no IFD is available
+   *     </ol>
+   */
+  private static String getCardTerminalName(
+      final List<CardTerminal> ifdList
+  ) throws CardException {
+
+    if (ifdList.isEmpty()) {
+      LOGGER.atError().log("no IFD available");
+      throw new CardException("no IFD available");
+    } // end fi
+    // ... at least one IFD available, show them all
+
+    LOGGER.atInfo().log(
+        "Number of IFD  : {}{}",
+        ifdList.size(),
+        String.format(
+            "%n      - %s",
+            ifdList.stream()
+                .map(CardTerminal::getName)
+                .collect(Collectors.joining(
+                    LINE_SEPARATOR + "      - ",
+                    "",
+                    ""
+                ))
+        )
+    );
+
+    String selected = "";
+    if (1 == ifdList.size()) { // NOPMD literal in a conditional statement
+      // ... just one IFD with status SmartCardPresent
+      //     => use that
+      selected = ifdList.getFirst().getName();
+    } else {
+      // ... more than one IFD with status SmartCardPresent
+      //     => ask user at GUI which to use
+
+      // compile a panel with radio buttons
+      final JPanel panel = new JPanel();
+      panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+      final ButtonGroup buttonGroup = new ButtonGroup();
+
+      ifdList.forEach(ifd -> {
+        final JRadioButton radioButton = new JRadioButton(ifd.getName());
+        radioButton.setActionCommand(ifd.getName());
+        buttonGroup.add(radioButton);
+        panel.add(radioButton);
+      }); // end forEach(ifd -> ...)
+
+      while (selected.isEmpty()) {
+        JOptionPane.showMessageDialog(
+            null, // parentComponent
+            panel, // message to display
+            "Choose an IFD", // title
+            JOptionPane.PLAIN_MESSAGE
+        );
+
+        final ButtonModel selection = buttonGroup.getSelection();
+
+        if (null != selection) {
+          selected = buttonGroup.getSelection().getActionCommand();
+        } // end fi
+      } // end while (nothing selected)
+    } // end else (one or more IFD with status SmartCardPresent)
+
+    return selected;
+  } // end method */
+} // end class

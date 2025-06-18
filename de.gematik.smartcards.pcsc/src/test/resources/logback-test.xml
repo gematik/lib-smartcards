@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration>
+
+<!--
+  For more information on how to configure it, see
+  https://logback.qos.ch/manual/configuration.html
+  https://logback.qos.ch/manual/layouts.html
+-->
+
+<configuration>
+    <import class="ch.qos.logback.classic.encoder.PatternLayoutEncoder"/>
+    <import class="ch.qos.logback.core.hook.DefaultShutdownHook"/>
+    <import class="ch.qos.logback.core.FileAppender"/>
+    <import class="ch.qos.logback.core.ConsoleAppender"/>
+
+    <appender name="STDOUT" class="ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+        <encoder class="PatternLayoutEncoder">
+            <pattern>%date %-12thread %-5level %-30logger{30} | %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="FileAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>TRACE</level>
+        </filter>
+        <file>build/log/TestPcsc.log</file>
+        <append>false</append>
+        <encoder class="PatternLayoutEncoder">
+            <charset>UTF-8</charset>
+            <pattern>%date %-12thread %-5level %-30logger{30} | %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="TRACE">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="FILE"/>
+    </root>
+    <shutdownHook class="DefaultShutdownHook"/>
+</configuration>

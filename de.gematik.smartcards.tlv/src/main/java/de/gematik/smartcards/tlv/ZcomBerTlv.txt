@@ -1,0 +1,56 @@
+public abstract class BerTlv {
+  /**
+   * FIXME: not yet ready for publication
+   * Pseudo constructor from {@link ByteBuffer}.
+   *
+   * <p>The value of bit b6 in the first octet decides whether the given octets
+   * are treated as {@link PrimitiveBerTlv} or {@link ConstructedBerTlv}.
+   *
+   * <p><i><b>Notes:</b></i>
+   * <ol>
+   *   <li><i>This method is NOT thread-safe, because it is possible to change
+   *          the content of the input parameter(s) while this method is running.
+   *      </i>
+   *   <li><i>Object sharing is not a problem here, because
+   *          input parameter(s) are only read
+   *          and
+   *          return value is immutable.
+   *      </i>
+   * </ol>
+   *
+   * @param buffer
+   *     containing the data for the new object
+   *
+   * @return an object of known subclass
+   *
+   * @throws IllegalArgumentException
+   *     if octet string is not in accordance to ISO/IEC 8825-1:2021
+   * @throws ArithmeticException
+   *     if tag-field contains more than eight octets
+   */
+  public static BerTlv getInstance(// NOPMD each time new object
+      final ByteBuffer buffer
+  ) {
+    // mark current position (allow reading 8 octets before invalidating mark)
+    buffer.mark();
+    final byte[] tagField = readTag(buffer); // read tag-field
+
+    // Note 1: Intentionally here the tag is cast into an int as a preparation
+    //         for the following switch-statement. As long as that switch
+    //         statement contains only cases for tags no longer than four
+    //         octets that is okay.
+    // Note 2: The "default" branch takes care of all other tags, even those
+    //         with more than four octets.
+    final int tag = (int) convertTag(tagField);
+    // ... no exception thrown, i.e., tag-field short enough for this implementation
+    buffer.reset(); // reset read position to marked position
+
+    // switch on tag to create instances of special subclasses
+    return switch (tag) {
+      default ->
+          (0 == (tagField[0] & 0x20))       // ... tag-value has no specific subclass
+              ? new PrimitiveBerTlv(buffer) //     => create generic subclass
+              : new ConstructedBerTlv(inputStream);
+    }; // end Switch (tag)
+  } // end method */
+} // end class
