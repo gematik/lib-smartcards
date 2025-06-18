@@ -4,10 +4,11 @@
 
   <groupId>de.gematik.smartcards</groupId>
   <artifactId>lib-smartcards</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
   <packaging>pom</packaging>
-
+  <name>lib-smartcards</name>
   <description>lib-smartcards</description>
+  <url>https://github.com/gematik/lib-smartcards</url>
 
   <organization>
     <name>gematik GmbH</name>
@@ -48,7 +49,7 @@
 
   <properties>
     <java.version>21</java.version>
-    <project.build.outputTimestamp>2025-06-18T09:09:41Z</project.build.outputTimestamp>
+    <project.build.outputTimestamp>2025-06-18T13:00:12Z</project.build.outputTimestamp>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
