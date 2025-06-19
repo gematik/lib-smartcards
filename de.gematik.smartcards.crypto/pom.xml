@@ -4,13 +4,13 @@
   <parent>
     <groupId>de.gematik.smartcards</groupId>
     <artifactId>lib-smartcards</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>de.gematik.smartcards.crypto</artifactId>
-  <version>1.0.2</version>
-
+  <version>1.0.3</version>
+  <name>${project.artifactId}</name>
   <description>Cryptographic objects</description>
 
   <dependencies>
